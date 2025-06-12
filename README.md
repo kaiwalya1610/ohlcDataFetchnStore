@@ -8,6 +8,8 @@ This documentation covers setting up a Python script (`fetchNplaceData.py`) as a
 
 - Ubuntu Linux system with systemd
 - Python 3 installed
+- PM2 installed and accessible via `/usr/bin/pm2`
+- Express backend service named `express-backend` configured in PM2
 - Root or sudo access
 - Script located at `/root/ohlcDataFetchnStore/fetchNplaceData.py`
 
@@ -40,6 +42,7 @@ Type=oneshot
 User=root
 WorkingDirectory=/root/ohlcDataFetchnStore
 ExecStart=/usr/bin/python3 /root/ohlcDataFetchnStore/fetchNplaceData.py
+ExecStartPost=/usr/bin/pm2 restart express-backend
 StandardOutput=journal
 StandardError=journal
 
@@ -58,6 +61,7 @@ WantedBy=multi-user.target
   - `User=root`: Runs as root user
   - `WorkingDirectory`: Sets the working directory for script execution
   - `ExecStart`: Command to execute (full path to Python and script)
+  - `ExecStartPost`: Command to run after successful completion of ExecStart
   - `StandardOutput=journal`: Redirects stdout to systemd journal
   - `StandardError=journal`: Redirects stderr to systemd journal
 
@@ -74,7 +78,6 @@ Description=Run Fetch and Place Data Pipeline every 24 hours
 Requires=fetchnplace.service
 
 [Timer]
-OnBootSec=1min
 OnUnitActiveSec=24h
 Persistent=true
 RandomizedDelaySec=0
@@ -90,7 +93,6 @@ WantedBy=timers.target
   - `Requires=fetchnplace.service`: Declares dependency on the service
 
 - **`[Timer]` Section:**
-  - `OnBootSec=1min`: Runs 1 minute after timer service starts
   - `OnUnitActiveSec=24h`: Runs every 24 hours after successful completion
   - `Persistent=true`: Catches up missed runs if system was offline
   - `RandomizedDelaySec=0`: No random delay added to execution time
@@ -153,8 +155,8 @@ sudo systemctl start fetchnplace.timer
 **Purpose:** Immediately starts the timer service
 **What Happens:**
 - Timer becomes active and begins scheduling
-- First execution will occur after 1 minute (based on OnBootSec)
-- Subsequent executions every 24 hours
+- First execution will occur after 24 hours from the first manual run
+- Subsequent executions every 24 hours after each completion
 
 ## Management Commands
 
@@ -371,12 +373,24 @@ sudo systemd-analyze verify fetchnplace.service
 sudo systemd-analyze verify fetchnplace.timer
 ```
 
-#### Check Python Path
+#### Check PM2 Path and Service
 ```bash
-which python3
+which pm2
+pm2 list
 ```
 
-**Expected Output:** `/usr/bin/python3`
+**Expected Output:** 
+- PM2 path: `/usr/bin/pm2` or `/usr/local/bin/pm2`
+- Should show `express-backend` in the list
+
+#### PM2 Permission Issues
+```bash
+# If PM2 is installed globally for another user
+sudo npm install -g pm2
+
+# Or specify full path in service file
+# Replace /usr/bin/pm2 with actual path from 'which pm2'
+```
 
 #### Test Script Manually
 ```bash
@@ -472,6 +486,7 @@ Type=oneshot
 User=root
 WorkingDirectory=/root/ohlcDataFetchnStore
 ExecStart=/usr/bin/python3 /root/ohlcDataFetchnStore/fetchNplaceData.py
+ExecStartPost=/usr/bin/pm2 restart express-backend
 StandardOutput=journal
 StandardError=journal
 
@@ -486,7 +501,6 @@ Description=Run Fetch and Place Data Pipeline every 24 hours
 Requires=fetchnplace.service
 
 [Timer]
-OnBootSec=1min
 OnUnitActiveSec=24h
 Persistent=true
 RandomizedDelaySec=0
@@ -500,7 +514,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable fetchnplace.timer
 sudo systemctl start fetchnplace.timer
 
+# Run the service once manually to start the 24-hour cycle
+sudo systemctl start fetchnplace.service
+
 echo "Service setup complete!"
+echo "First run completed manually - next run will be in 24 hours"
 echo "Check status with: sudo systemctl status fetchnplace.timer"
 echo "View logs with: sudo journalctl -u fetchnplace.service -f"
 ```
